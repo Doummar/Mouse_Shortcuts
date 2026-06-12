@@ -1,0 +1,19 @@
+{
+    "toggle_binding":       {"type": "key", "key_int": 189, "display": "½"},
+    "addon_active":         true,
+    "show_answer_feedback": false,
+    "right_click_question":        "show_answer",
+    "right_click_answer":          "good",
+    "right_double_click_question": "do_nothing",
+    "right_double_click_answer":   "do_nothing",
+    "middle_click_question":       "do_nothing",
+    "middle_click_answer":         "do_nothing",
+    "scroll_up_question":          "do_nothing",
+    "scroll_up_answer":            "easy",
+    "scroll_down_question":        "do_nothing",
+    "scroll_down_answer":          "again",
+    "extra1_click_question":       "do_nothing",
+    "extra1_click_answer":         "do_nothing",
+    "extra2_click_question":       "do_nothing",
+    "extra2_click_answer":         "do_nothing"
+}

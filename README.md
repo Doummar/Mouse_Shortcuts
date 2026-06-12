@@ -93,7 +93,7 @@ Review without touching the keyboard.
 
 Download directly from:
 
-[[(Insert your AnkiWeb link here)](https://ankiweb.net/shared/info/418106886)](https://ankiweb.net/shared/info/418106886)
+https://ankiweb.net/shared/info/418106886
 
 ---
 

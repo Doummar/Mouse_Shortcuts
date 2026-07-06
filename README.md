@@ -1,4 +1,4 @@
-# Mouse Answer
+# Mouse Shortcuts
 
 Use your mouse as a shortcut controller during Anki review.
 

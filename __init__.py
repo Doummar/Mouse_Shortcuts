@@ -1,12 +1,23 @@
+# Mouse Answer
+# Created by Adel Aitah
+# GitHub: https://github.com/Doummar/Mouse-answer
+# Copyright (c) 2026 Adel Aitah — All rights reserved
 """
-Mouse Answer - Configurable mouse shortcuts for Anki review
-Version 1.2.0
+Mouse Answer — Anki review shortcuts addon
+Right click, middle click, scroll wheel, and extra mouse buttons for
+rating cards, context-aware per question/answer side, optional toggle key.
 """
 import webbrowser
+from time import monotonic
 from aqt import mw, gui_hooks
 from aqt.qt import *
 
-VERSION    = "1.2.0"
+ADDON_NAME    = "Mouse Answer"
+ADDON_AUTHOR  = "Adel Aitah"
+ADDON_VERSION = "1.2.2"
+ADDON_URL     = "https://github.com/Doummar/Mouse-answer"
+
+VERSION    = "1.2.2"
 ISSUE_URL  = "https://github.com/Doummar/Mouse-answer/issues"
 _DEFAULT_TOGGLE = {"type": "key", "key_int": 189, "display": "½"}
 
@@ -46,9 +57,16 @@ _FEEDBACK_COLORS = {
     "easy":  "#4a90d9",
 }
 
+# Hoisted out of do_action(): unlike tuple literals, a dict literal is
+# rebuilt from scratch on every function call in CPython, and do_action runs
+# on every rating. A module-level constant is built once at import time.
+_EASE_MAP = {"again": 1, "hard": 2, "good": 3, "easy": 4}
+
 _config_cache    = None
 _installed       = False
 _feedback_widget = None
+_debounce_key    = None   # (action, reviewer-state) tuple of last scheduled event
+_debounce_ms     = 0      # monotonic ms timestamp of last scheduled event
 
 
 # ── Core helpers ───────────────────────────────────────────────────────────────
@@ -79,31 +97,97 @@ def is_dark_mode():
     return mw.app.palette().color(QPalette.ColorRole.Window).lightness() < 128
 
 
-def do_action(action, reviewer):
-    """Execute a configured action; return True if consumed."""
-    if not action or action == "do_nothing":
-        return False
-    state = getattr(reviewer, "state", None)
-    if action == "show_answer":
-        if state != "question":
-            return False
+# ── Deferred action callbacks ─────────────────────────────────────────────────
+# BUG FIX: previously do_action called _answerCard synchronously inside the Qt
+# event filter. Calling Anki's card-transition code while Qt is still dispatching
+# the mouse event creates a race with QWebEngineView's renderer: the next card
+# starts loading, but any subsequent handling of the same event by Chromium
+# (see XButton fix in eventFilter) can navigate the WebView backward, leaving
+# the card blank (text/images gone, audio still plays because Anki's audio system
+# is independent of the WebView). Deferring via singleShot(0) lets Qt finish
+# event dispatch fully before the card transition begins.
+
+def _make_answer_cb(ease):
+    """Return a zero-argument callable that safely answers the current card."""
+    def _cb():
+        if mw.state != "review":
+            return
+        reviewer = getattr(mw, "reviewer", None)
+        if reviewer is None or getattr(reviewer, "state", None) != "answer":
+            return
+        for name in ("_answerCard", "_answer", "answer_card"):
+            fn = getattr(reviewer, name, None)
+            if callable(fn):
+                try:
+                    fn(ease)
+                    return
+                except Exception as exc:
+                    print(f"MouseAnswer: {name}({ease}) raised {exc!r}")
+    return _cb
+
+
+def _make_show_answer_cb():
+    """Return a zero-argument callable that safely reveals the answer."""
+    def _cb():
+        if mw.state != "review":
+            return
+        reviewer = getattr(mw, "reviewer", None)
+        if reviewer is None or getattr(reviewer, "state", None) != "question":
+            return
         for name in ("_showAnswer", "show_answer"):
             fn = getattr(reviewer, name, None)
             if callable(fn):
                 try:
-                    fn(); return True
-                except Exception:
-                    pass
+                    fn()
+                    return
+                except Exception as exc:
+                    print(f"MouseAnswer: {name}() raised {exc!r}")
+    return _cb
+
+
+def do_action(action, reviewer):
+    """Validate, debounce, and schedule a configured action.
+
+    Returns True  → event should be consumed (action will fire, or was
+                    a duplicate and is deliberately swallowed).
+    Returns False → event may pass through to Qt / the WebView.
+    """
+    global _debounce_key, _debounce_ms
+    if not action or action == "do_nothing":
         return False
-    ease = {"again": 1, "hard": 2, "good": 3, "easy": 4}.get(action)
+    state = getattr(reviewer, "state", None)
+
+    # ── Debounce ──────────────────────────────────────────────────────────────
+    # BUG FIX: some mice (or Qt's internal routing through QWebEngineView child
+    # widgets) deliver multiple MouseButtonPress events per physical click.
+    # Identical (action, reviewer-state) pairs within 250 ms are consumed but
+    # not executed, preventing double-answers.
+    now_ms = int(monotonic() * 1000)
+    key    = (action, state)
+    if key == _debounce_key and now_ms - _debounce_ms < 250:
+        return True   # consume the duplicate; don't double-answer
+    _debounce_key = key
+    _debounce_ms  = now_ms
+
+    # ── show_answer ───────────────────────────────────────────────────────────
+    if action == "show_answer":
+        if state != "question":
+            return False
+        if not any(callable(getattr(reviewer, n, None))
+                   for n in ("_showAnswer", "show_answer")):
+            return False
+        QTimer.singleShot(0, _make_show_answer_cb())
+        return True
+
+    # ── rate card ─────────────────────────────────────────────────────────────
+    ease = _EASE_MAP.get(action)
     if ease is not None and state == "answer":
-        for name in ("_answerCard", "_answer"):
-            fn = getattr(reviewer, name, None)
-            if callable(fn):
-                try:
-                    fn(ease); return True
-                except Exception:
-                    pass
+        if not any(callable(getattr(reviewer, n, None))
+                   for n in ("_answerCard", "_answer", "answer_card")):
+            return False
+        QTimer.singleShot(0, _make_answer_cb(ease))
+        return True
+
     return False
 
 
@@ -140,7 +224,8 @@ class FeedbackWidget(QLabel):
         self._timer.start(1400)
 
     def show_action(self, action):
-        self._show(action.capitalize(), _FEEDBACK_COLORS.get(action, "#4a90d9"))
+        label = action.replace("_", " ").title()
+        self._show(label, _FEEDBACK_COLORS.get(action, "#4a90d9"))
 
     def show_toggle(self, active):
         self._show("Enabled ✓" if active else "Disabled",
@@ -269,7 +354,7 @@ class HelpDialog(QDialog):
         vb.addWidget(title)
         vb.addSpacing(4)
 
-        sub = QLabel("Use your mouse buttons as shortcuts during Anki card review.")
+        sub = QLabel("Turn your mouse buttons into review shortcuts.")
         sub.setStyleSheet(f"font-size:13px; color:{muted};")
         sub.setWordWrap(True)
         vb.addWidget(sub)
@@ -293,15 +378,15 @@ class HelpDialog(QDialog):
             vb.addWidget(l); vb.addSpacing(3)
 
         hr()
-        heading("What it does")
-        item("Right click, middle click, scroll wheel, and extra buttons are configurable")
+        heading("Features")
+        item("Supports all mouse buttons, including scroll wheel and side buttons.")
         item("Each action: Show Answer, Again, Hard, Good, Easy, or Do Nothing")
         item("Separate actions for the question side and the answer side")
         item("Supports right double-click and extra mouse buttons (back / forward)")
         item("Speeds up review — rate cards without ever touching the keyboard")
         vb.addSpacing(10)
 
-        heading("How to use")
+        heading("Quick Start")
         item("During review, perform the configured mouse action to trigger it")
         item("Context-aware: different behaviour on question vs answer side")
         item("Right single-click and double-click are configured independently")
@@ -309,8 +394,8 @@ class HelpDialog(QDialog):
         item("Back & forward side buttons work on gaming and multi-button mice")
         vb.addSpacing(10)
 
-        heading("Settings  (Tools → Mouse Answer Settings)")
-        item("General tab: set a toggle key to enable / disable the addon mid-review")
+        heading("Customization  (Tools → Mouse Shortcuts)")
+        item("Open Settings to customize mouse shortcuts.")
         item("General tab: enable answer feedback to see which button you pressed")
         item("Configure each mouse button for question and answer sides separately")
         item("Changes take effect immediately after saving")
@@ -330,30 +415,37 @@ class HelpDialog(QDialog):
         # Bottom bar
         bar = QWidget()
         bl  = QHBoxLayout(bar)
-        bl.setContentsMargins(16, 8, 16, 8)
+        bl.setContentsMargins(16, 6, 16, 6)
         open_btn = QPushButton("Open Settings")
+        open_btn.setDefault(True)
         open_btn.clicked.connect(self._open_settings)
-        ok_btn = QPushButton("Got it  ✓")
-        ok_btn.setDefault(True)
-        ok_btn.clicked.connect(self.accept)
-        ok_btn.setStyleSheet(
+        open_btn.setStyleSheet(
             "QPushButton{background:#4a90d9;color:#fff;border:none;"
             "font-weight:bold;border-radius:4px;padding:6px 18px;}"
             "QPushButton:hover{background:#5a9de3;}"
         )
-        bl.addWidget(open_btn); bl.addStretch(); bl.addWidget(ok_btn)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self._close)
+        bl.addWidget(open_btn); bl.addStretch(); bl.addWidget(close_btn)
         root.addWidget(bar)
 
         root.addWidget(_sep())
 
-        # Footer
-        foot = QLabel(f"Mouse Answer  v{VERSION}  —  Created by Adel")
+        # Footer — version only, per the addon-guide design system
+        foot = QLabel(f"v{VERSION}")
         foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        foot.setStyleSheet(
-            f"font-size:11px; color:{muted}; padding:6px 0;")
+        foot.setStyleSheet(f"font-size:11px; color:{muted}; padding:2px 0;")
         root.addWidget(foot)
 
         self.adjustSize()
+        # The fix above (locking to sizeHint() straight away) didn't work:
+        # word-wrapped QLabels can't compute an accurate heightForWidth()
+        # until the dialog has settled on its real width, so that first
+        # sizeHint() pass over-reports height — adjustSize() had already
+        # baked in the inflated number. Now that width is settled, ask the
+        # layout again for the height it actually needs at that width.
+        h = self.layout().heightForWidth(self.width())
+        self.setFixedHeight(h if h > 0 else self.sizeHint().height())
 
     def _open_settings(self):
         self.accept()
@@ -364,6 +456,14 @@ class HelpDialog(QDialog):
         if not isinstance(self.parent(), SettingsDialog):
             QTimer.singleShot(0, show_settings)
 
+    def _close(self):
+        self.accept()
+        # If Help was opened from Settings, Close backs all the way out
+        # instead of just returning to the Settings window underneath.
+        parent = self.parent()
+        if isinstance(parent, SettingsDialog):
+            parent.close()
+
 
 # ── Settings dialog ────────────────────────────────────────────────────────────
 
@@ -372,10 +472,11 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Mouse Answer Settings")
         self.setMinimumWidth(520)
-        self._cfg            = get_config()
-        self._combos         = {}
-        self._key_capture    = None
-        self._feedback_check = None
+        self._cfg             = get_config()
+        self._combos          = {}
+        self._key_capture     = None
+        self._feedback_check  = None
+        self._pending_binding = None   # Set by KeyCaptureBox; read in _save
         self._build()
 
     def _build(self):
@@ -500,7 +601,7 @@ class SettingsDialog(QDialog):
         self._key_capture = KeyCaptureBox(
             binding, dark, base, fg, border, hl, w)
         self._key_capture.binding_changed.connect(
-            lambda b: self._cfg.update({"toggle_binding": b}))
+            lambda b: setattr(self, '_pending_binding', b))
         lay.addWidget(self._key_capture)
 
         # ── ANSWER FEEDBACK ───────────────────────────────────────────────────
@@ -566,17 +667,26 @@ class SettingsDialog(QDialog):
         for val, label in ACTIONS:
             c.addItem(label, val)
         current = self._cfg.get(key, "do_nothing")
-        for i, (v, _) in enumerate(ACTIONS):
-            if v == current:
-                c.setCurrentIndex(i); break
+        idx = c.findData(current)
+        if idx >= 0:
+            c.setCurrentIndex(idx)
         self._combos[key] = c
         return c
 
     def _save(self):
-        cfg = {k: c.currentData() for k, c in self._combos.items()}
-        cfg["toggle_binding"]       = self._cfg.get("toggle_binding", _DEFAULT_TOGGLE)
+        # Start from the full current config so settings for tabs the user
+        # never opened (and therefore never built) are preserved, not wiped.
+        cfg = dict(self._cfg)
+        cfg.update({k: c.currentData() for k, c in self._combos.items()})
+        # Use the newly captured binding if the user changed it; otherwise keep existing.
+        if self._pending_binding is not None:
+            cfg["toggle_binding"] = dict(self._pending_binding)
+        else:
+            tb = self._cfg.get("toggle_binding")
+            cfg["toggle_binding"] = dict(tb) if tb else _DEFAULT_TOGGLE.copy()
         cfg["addon_active"]         = self._cfg.get("addon_active", True)
-        cfg["show_answer_feedback"] = self._feedback_check.isChecked()
+        cfg["show_answer_feedback"] = (self._feedback_check.isChecked()
+                                       if self._feedback_check else False)
         save_config(cfg)
         self.accept()
 
@@ -591,21 +701,52 @@ class SettingsDialog(QDialog):
             QMessageBox.StandardButton.No,
         ) != QMessageBox.StandardButton.Yes:
             return
-        save_config(DEFAULT_CONFIG.copy())
-        self._cfg = DEFAULT_CONFIG.copy()
+        new_cfg = dict(DEFAULT_CONFIG)
+        new_cfg["toggle_binding"] = _DEFAULT_TOGGLE.copy()
+        save_config(new_cfg)
+        self._cfg             = new_cfg   # same object as _config_cache now
+        self._pending_binding = None
         for key, combo in self._combos.items():
             val = DEFAULT_CONFIG.get(key, "do_nothing")
-            for i, (v, _) in enumerate(ACTIONS):
-                if v == val:
-                    combo.setCurrentIndex(i); break
+            idx = combo.findData(val)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
         if self._key_capture:
-            self._key_capture.set_binding(_DEFAULT_TOGGLE)
+            self._key_capture.set_binding(_DEFAULT_TOGGLE.copy())
         if self._feedback_check:
             self._feedback_check.setChecked(False)
 
 
 def show_settings():
     SettingsDialog(mw).exec()
+
+
+# ── Right-click single / double disambiguation ─────────────────────────────────
+
+class _RCState:
+    """Holds deferred right-click state for single/double disambiguation."""
+    def __init__(self):
+        self.timer    = None   # QTimer (created lazily)
+        self.action   = None   # Pending single-click action string
+        self.reviewer = None   # mw.reviewer at press time
+
+_rc = _RCState()
+
+
+def _fire_pending_single_rc():
+    """Timer callback: execute the deferred right-click single action."""
+    action, reviewer = _rc.action, _rc.reviewer
+    _rc.action = _rc.reviewer = None
+    if not action or action == "do_nothing" or not reviewer:
+        return
+    if mw.state != "review":
+        return
+    cfg = get_config()
+    if not cfg.get("addon_active", True):
+        return
+    if do_action(action, reviewer):
+        if cfg.get("show_answer_feedback", False) and _feedback_widget:
+            _feedback_widget.show_action(action)
 
 
 # ── Event filter ───────────────────────────────────────────────────────────────
@@ -617,22 +758,74 @@ _T_PRESS  = QEvent.Type.MouseButtonPress
 _T_DBLCLK = QEvent.Type.MouseButtonDblClick
 _HANDLED  = frozenset((_T_KEY, _T_CTX, _T_WHEEL, _T_PRESS, _T_DBLCLK))
 
+# Same idea as the _T_* aliases above: resolve these once instead of
+# re-walking the Qt.MouseButton attribute chain on every mouse event.
+_BTN_RIGHT  = Qt.MouseButton.RightButton
+_BTN_MIDDLE = Qt.MouseButton.MiddleButton
+_BTN_X1     = Qt.MouseButton.XButton1
+_BTN_X2     = Qt.MouseButton.XButton2
+_BTN_XSET   = (_BTN_X1, _BTN_X2)
+
 
 class MouseFilter(QObject):
     def eventFilter(self, obj, event):
         t = event.type()
         if t not in _HANDLED:
             return False
-        # Never intercept events on dialogs or any window other than the main
-        # Anki window — this lets KeyCaptureBox receive middle-click freely
-        # window() is the correct PyQt6 API; topLevelWidget() is unavailable
-        # on some internal Qt6 objects (e.g. QWebEngineView sub-widgets)
+
+        # ── Non-QWidget XButton guard ─────────────────────────────────────────
+        # QWebEngineView's internal rendering surfaces are NOT QWidget instances.
+        # They bypass the isinstance guard below, so the XButton event reaches
+        # Chromium's input handler, which treats XButton1/2 as browser Back/
+        # Forward navigation.  The WebView jumps backward exactly as Anki loads
+        # the next card -> audio plays (independent pipeline) but text and images
+        # disappear.
+        #
+        # Fix: catch ALL XButton presses on non-QWidget objects during review,
+        # execute the configured action here, then consume the event so Chromium
+        # never sees it.  If the same physical click also dispatches to the
+        # QWidget path below, do_action's debounce swallows the duplicate.
+        if t == _T_PRESS and mw.state == "review":
+            try:
+                btn = event.button()
+                if btn in _BTN_XSET:
+                    if not isinstance(obj, QWidget):
+                        _rv = getattr(mw, "reviewer", None)
+                        if _rv:
+                            _cfg = get_config()
+                            if _cfg.get("addon_active", True):
+                                _rv_state = getattr(_rv, "state", "")
+                                if btn == _BTN_X1:
+                                    _key = ("extra1_click_question"
+                                            if _rv_state == "question"
+                                            else "extra1_click_answer")
+                                else:
+                                    _key = ("extra2_click_question"
+                                            if _rv_state == "question"
+                                            else "extra2_click_answer")
+                                _action = _cfg.get(_key, "do_nothing")
+                                if do_action(_action, _rv):
+                                    if _cfg.get("show_answer_feedback") and _feedback_widget:
+                                        _feedback_widget.show_action(_action)
+                        return True  # always consume -- prevents Chromium nav
+                    # QWidget: fall through to full handler below
+            except Exception:
+                pass
+
+        # ── Standard guard ────────────────────────────────────────────────────
+        # Never intercept events on dialogs or any window other than mw.
+        # Cheapest check first: this filter is installed application-wide, so
+        # it runs for every keypress/click/scroll everywhere in Anki (browser,
+        # editor, Settings dialog, etc.), and almost all of that happens while
+        # not reviewing. Bailing out on mw.state (a plain attribute check)
+        # before touching isinstance()/.window() (PyQt/C++ calls) skips the
+        # pricier check for the overwhelming majority of events app-wide.
+        if mw.state != "review":
+            return False
         try:
             if not isinstance(obj, QWidget) or obj.window() is not mw:
                 return False
         except Exception:
-            return False
-        if mw.state != "review":
             return False
 
         cfg     = get_config()
@@ -652,7 +845,7 @@ class MouseFilter(QObject):
                 return True
             return False   # never consume other key events
 
-        # ── Mouse events ───────────────────────────────────────────────────────
+        # ── Mouse events ──────────────────────────────────────────────────────
         reviewer = getattr(mw, "reviewer", None)
         if not reviewer:
             return False
@@ -668,14 +861,18 @@ class MouseFilter(QObject):
                 _feedback_widget.show_toggle(new_state)
             return True
 
-        # Addon inactive – pass all mouse events through
+        # Addon inactive – pass most events through, but still eat XButton to
+        # prevent the WebView from navigating away even when the addon is off.
         if not cfg.get("addon_active", True):
+            if t == _T_PRESS and event.button() in _BTN_XSET:
+                return True
             return False
 
-        # Suppress OS context menu when right-click is bound
+        # Suppress OS context menu when right single-click OR right double-click is bound
         if t == _T_CTX:
-            key = "right_click_question" if state == "question" else "right_click_answer"
-            return cfg.get(key, "do_nothing") != "do_nothing"
+            q = (state == "question")
+            return (cfg.get("right_click_question"        if q else "right_click_answer",        "do_nothing") != "do_nothing"
+                 or cfg.get("right_double_click_question" if q else "right_double_click_answer", "do_nothing") != "do_nothing")
 
         def _act(action):
             if do_action(action, reviewer):
@@ -691,25 +888,47 @@ class MouseFilter(QObject):
                   ("scroll_down_question" if state == "question" else "scroll_down_answer")
             return _act(cfg.get(key, "do_nothing"))
 
-        if t == _T_DBLCLK and event.button() == Qt.MouseButton.RightButton:
-            key = ("right_double_click_question" if state == "question"
-                   else "right_double_click_answer")
-            return _act(cfg.get(key, "do_nothing"))
+        if t == _T_DBLCLK and event.button() == _BTN_RIGHT:
+            # Cancel the deferred single-click (if pending) and fire double instead
+            if _rc.timer and _rc.timer.isActive():
+                _rc.timer.stop()
+            _rc.action = _rc.reviewer = None
+            q = (state == "question")
+            return _act(cfg.get("right_double_click_question" if q else "right_double_click_answer", "do_nothing"))
 
         if t == _T_PRESS:
             btn = event.button()
-            if btn == Qt.MouseButton.RightButton:
-                key = "right_click_question" if state == "question" else "right_click_answer"
-                return _act(cfg.get(key, "do_nothing"))
-            if btn == Qt.MouseButton.MiddleButton:
+            if btn == _BTN_RIGHT:
+                q             = (state == "question")
+                single_action = cfg.get("right_click_question"        if q else "right_click_answer",        "do_nothing")
+                double_action = cfg.get("right_double_click_question" if q else "right_double_click_answer", "do_nothing")
+                if double_action != "do_nothing":
+                    # Defer single-click: _T_DBLCLK cancels the timer before it fires
+                    if _rc.timer is None:
+                        _rc.timer = QTimer()
+                        _rc.timer.setSingleShot(True)
+                        _rc.timer.timeout.connect(_fire_pending_single_rc)
+                    _rc.action   = single_action
+                    _rc.reviewer = reviewer
+                    _rc.timer.start(QApplication.instance().doubleClickInterval())
+                    return True   # consume press; action fires via timer or is cancelled
+                return _act(single_action)
+            if btn == _BTN_MIDDLE:
                 key = "middle_click_question" if state == "question" else "middle_click_answer"
                 return _act(cfg.get(key, "do_nothing"))
-            if btn == Qt.MouseButton.XButton1:
+            if btn == _BTN_X1:
+                # BUG FIX: previously returned _act(...) which returns False for
+                # "do_nothing", allowing the event to reach the WebView and trigger
+                # Chromium's built-in "browser back" navigation → blank card.
+                # Now we always return True (consume) regardless of the configured
+                # action, executing it only when it isn't "do_nothing".
                 key = "extra1_click_question" if state == "question" else "extra1_click_answer"
-                return _act(cfg.get(key, "do_nothing"))
-            if btn == Qt.MouseButton.XButton2:
+                _act(cfg.get(key, "do_nothing"))
+                return True  # always consume – prevents WebView browser-back
+            if btn == _BTN_X2:
                 key = "extra2_click_question" if state == "question" else "extra2_click_answer"
-                return _act(cfg.get(key, "do_nothing"))
+                _act(cfg.get(key, "do_nothing"))
+                return True  # always consume – prevents WebView browser-forward
 
         return False
 
@@ -724,9 +943,9 @@ def _install():
         mw.app.installEventFilter(_filter)
         _feedback_widget = FeedbackWidget(mw)
         _installed = True
-    if not any(a.text() == "Mouse Answer Settings"
+    if not any(a.text() == "Mouse Shortcuts"
                for a in mw.form.menuTools.actions()):
-        action = QAction("Mouse Answer Settings", mw)
+        action = QAction("Mouse Shortcuts", mw)
         action.triggered.connect(show_settings)
         mw.form.menuTools.addAction(action)
 

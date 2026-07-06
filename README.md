@@ -141,4 +141,4 @@ If you discover a better workflow or have suggestions, feel free to share them.
 
 ---
 
-**Study smarter, click less, and review on! — Adel**
+**Study smarter, click less, and review on!** - Adel

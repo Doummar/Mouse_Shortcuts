@@ -48,7 +48,7 @@ Originally created for my own daily study sessions to make reviews smoother and 
 
 ### Instant setup
 
-![Configuration](https://i.postimg.cc/htGgCfJQ/3.png)
+
 
 ---
 

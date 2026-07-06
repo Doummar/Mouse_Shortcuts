@@ -53,7 +53,7 @@ Originally created for my own daily study sessions to make reviews smoother and 
 1. Open:
 
 ```text
-Tools → Mouse Answer Settings
+Tools → Mouse Shortcuts
 ```
 
 2. Configure your preferred mouse actions

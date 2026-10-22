@@ -42,7 +42,7 @@ Originally created for my own daily study sessions to make reviews smoother and 
 
 ### Assign review behaviour
 
-![Actions](https://i.postimg.cc/qqd4QwK1/2.png)
+![Actions](https://i.postimg.cc/VNNqdwfD/image.png)
 
 ### Instant setup
 

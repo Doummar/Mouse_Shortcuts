@@ -1,144 +1,132 @@
-# Mouse Shortcuts
+# Mouse Buttons as Review Shortcuts
 
-Use your mouse as a shortcut controller during Anki review.
+Use your mouse as a configurable shortcut controller for Anki reviews.
 
-Mouse Answer allows you to review cards faster by assigning actions to mouse buttons instead of relying on the keyboard.
+**Mouse Buttons as Review Shortcuts** lets you assign review actions to mouse buttons, scroll-wheel movements, and long presses. Answer cards, reveal answers, undo a review action, and control your review workflow without relying on keyboard shortcuts.
 
-Originally created for my own daily study sessions to make reviews smoother and more comfortable — and later shared with the community.
-
----
+Designed for mouse-only review, gaming mice, multi-button mice, and anyone who wants a more flexible Anki review setup.
 
 ## Features
 
-- Review cards entirely with your mouse
-- Configure **right click**
-- Configure **middle click**
-- Configure **scroll wheel up / down**
-- Configure **right double-click**
-- Supports **extra mouse buttons** (Back / Forward)
-- Separate actions for:
-  - Question side
-  - Answer side
-- Available actions:
-  - Show Answer
-  - Again
-  - Hard
-  - Good
-  - Easy
-  - Do Nothing
-- Toggle addon on/off during review
-- Optional answer feedback
-- Works with gaming and multi-button mice
+- **Configurable mouse controls** — assign actions to supported mouse inputs.
+- **Right-click and middle-click support** — trigger review actions directly.
+- **Scroll-wheel shortcuts** — assign actions to scrolling up and down.
+- **Extra mouse buttons** — use supported Back and Forward buttons.
+- **Long-press actions** — assign secondary actions to a sustained press.
+- **Separate question and answer actions** — configure different behaviour for each side of a card.
+- **Review actions** — Show Answer, Again, Hard, Good, Easy, Do Nothing, and Undo (`Ctrl+Z`).
+- **Live enable/disable toggle** — turn the add-on on or off during review.
+- **Optional action feedback** — display feedback for the triggered action.
+- **Instant settings updates** — changes are saved and applied without requiring a restart.
+- **Configurable long-press duration** — adjust how long a button must be held before its secondary action triggers.
 
----
+Compatibility with individual mouse buttons can depend on your mouse hardware and operating system.
 
-## Screenshots
+## Preview
 
-### Configure actions
+### Mouse Shortcuts in Action
 
-![Settings](https://i.postimg.cc/sxpDRqys/1.png)
+![Mouse Shortcuts demo](https://i.postimg.cc/52hmrFdk/1.gif)
 
----
+### Settings
 
-### Assign review behaviour
+![Mouse Shortcuts settings](https://i.postimg.cc/sxpDRqys/1.png)
 
-![Actions](https://i.postimg.cc/VNNqdwfD/image.png)
+Configure mouse actions and change settings for your review workflow.
 
-### Instant setup
+### Assign Review Actions
 
----
+![Review action configuration](https://i.postimg.cc/VNNqdwfD/image.png)
+
+Choose actions for the question and answer sides, including answer reveal, review ratings, and no action.
+
+### Long-Press Actions
+
+![Long-press action configuration](https://i.postimg.cc/1zRkX8VB/image.png)
+
+Configure secondary actions, such as Undo (`Ctrl+Z`), using a long press.
 
 ## How to Use
 
-1. Open:
+1. Install the add-on from AnkiWeb.
+2. Open **Tools → Mouse Shortcuts** in Anki Desktop.
+3. Assign actions to your preferred mouse inputs.
+4. Configure separate actions for the question and answer sides.
+5. Optionally configure long-press actions and the feedback indicator.
+6. Start reviewing and use your mouse to trigger the configured actions.
 
-```text
-Tools → Mouse Shortcuts
-```
+Settings are saved and applied immediately, so you can adjust your setup without restarting Anki.
 
-2. Configure your preferred mouse actions
+## Example Configuration
 
-3. Start reviewing
+For example, you could configure your mouse like this:
 
-4. Trigger actions directly with your mouse
+| Mouse input | Question side | Answer side |
+|---|---|---|
+| Right click | Show Answer | Good |
+| Scroll up | Do Nothing | Easy |
+| Scroll down | Do Nothing | Again |
+| Middle click | Show Answer | Undo (`Ctrl+Z`) via long press |
 
----
-
-## Example Workflow
-
-Question side:
-
-```text
-Right Click → Show Answer
-```
-
-Answer side:
-
-```text
-Scroll Up → Easy
-Scroll Down → Again
-```
-
-Review without touching the keyboard.
-
----
+This is only an example. You can choose the actions that suit your own workflow.
 
 ## Installation
 
 ### Install from AnkiWeb
 
-Download directly from:
+Download the add-on:
 
-https://ankiweb.net/shared/info/418106886
+**[Mouse Buttons as Review Shortcuts — AnkiWeb](https://ankiweb.net/shared/info/418106886)**
 
----
+After installation, restart Anki if required and open **Tools → Mouse Shortcuts** to configure it.
 
-### Manual installation
+### Manual Installation
 
-1. Download ZIP
-2. Extract files
-3. Move addon folder into:
+1. Download or clone this repository.
+2. Place the add-on folder in Anki's `addons21` directory.
+3. Restart Anki.
 
-#### Windows
+Default add-on directories:
 
+**Windows**
 ```text
-C:\Users\YOUR_NAME\AppData\Roaming\Anki2\addons21\
+%APPDATA%\Anki2\addons21\
 ```
 
-#### macOS
-
+**macOS**
 ```text
 ~/Library/Application Support/Anki2/addons21/
 ```
 
-#### Linux
-
+**Linux**
 ```text
 ~/.local/share/Anki2/addons21/
 ```
 
-4. Restart Anki
+For most users, installing through AnkiWeb is the simplest option.
 
----
+## Related Add-ons
 
-## Support
+These add-ons can complement a customized Anki review workflow:
 
-Found a bug or have an idea?
+- [FocusFlow](https://ankiweb.net/shared/info/454655166) — Pomodoro timer, study sessions, and progress tracking.
+- [Minimalistic Drawing Panel](https://ankiweb.net/shared/info/1062267970) — draw, write, and annotate directly during review.
+- [Focus Mode Suite](https://ankiweb.net/shared/info/441544076) — reduce interface distractions during Anki reviews.
 
-Open an issue:
+## Bug Reports and Feature Requests
 
-https://github.com/Doummar/Mouse_Answer/issues
+Found a bug, encountered a compatibility issue, or have an idea for improving the add-on?
 
----
+[Open an issue on GitHub](https://github.com/Doummar/Mouse_Answer/issues).
 
-## Why I made this
+When reporting a problem, include your Anki version, operating system, mouse model (if relevant), and the steps needed to reproduce the issue.
 
-I built Mouse Answer because I wanted reviewing to feel faster and more natural during long study sessions.
+## About
 
-I still use it in my own studies every day, and many improvements come directly from real study situations and user feedback.
+Mouse Buttons as Review Shortcuts began as a tool for my own daily study sessions. Its features have grown from practical use and feedback, with the goal of making Anki reviews more comfortable and flexible.
 
-If you discover a better workflow or have suggestions, feel free to share them.
+Contributions, suggestions, and reports of reproducible issues are welcome.
 
----
+**Configure your mouse. Simplify your reviews.**
 
-**Study smarter, click less, and review on!** - Adel
+— Adel

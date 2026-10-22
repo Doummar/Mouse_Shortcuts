@@ -127,6 +127,4 @@ Mouse Buttons as Review Shortcuts began as a tool for my own daily study session
 
 Contributions, suggestions, and reports of reproducible issues are welcome.
 
-**Configure your mouse. Simplify your reviews.**
 
-— Adel
